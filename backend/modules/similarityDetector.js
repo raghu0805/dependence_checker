@@ -148,12 +148,18 @@ function detectSuspiciousPackages(packageNames) {
       // Handle case-variance (e.g. 'lodasH' vs 'lodash')
       const isCaseVariant = distance === 0 && baseName !== popular;
 
-      if ((distance > 0 && distance <= threshold && ratio >= 0.6) || isCaseVariant) {
-        suspiciousMatches.push({
-          similarTo: popular,
-          distance: isCaseVariant ? 1 : distance,
-          similarity: isCaseVariant ? 99 : Math.round(ratio * 100),
-        });
+      // Stricter ratio (80%) prevents 'arg' vs 'yargs' false positives.
+      // isScopeMismatch prevents scoped internals ('@babel/core') from flagging as generic typos ('cors').
+      const isScopeMismatch = pkgName.startsWith('@') && !popular.startsWith('@');
+
+      if (!isScopeMismatch) {
+        if ((distance > 0 && distance <= threshold && ratio >= 0.8) || isCaseVariant) {
+          suspiciousMatches.push({
+            similarTo: popular,
+            distance: isCaseVariant ? 1 : distance,
+            similarity: isCaseVariant ? 99 : Math.round(ratio * 100),
+          });
+        }
       }
     }
 

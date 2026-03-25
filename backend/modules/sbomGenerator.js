@@ -8,22 +8,43 @@ const fetch = require('node-fetch');
 
 const NPM_REGISTRY = 'https://registry.npmjs.org';
 
-async function fetchPackageInfo(packageName, version) {
-  try {
-    const cleanVersion = version.replace(/[\^~>=<]/g, '').split(' ')[0];
-    const url = `${NPM_REGISTRY}/${encodeURIComponent(packageName)}/${cleanVersion}`;
-    const res = await fetch(url, { timeout: 8000 });
-    if (!res.ok) {
-      // Try fetching latest if specific version fails
-      const fallbackRes = await fetch(`${NPM_REGISTRY}/${encodeURIComponent(packageName)}/latest`, { timeout: 8000 });
-      if (!fallbackRes.ok) return null;
-      return await fallbackRes.json();
+async function fetchPackageInfo(packageName, version, retries = 3) {
+  const cleanVersion = version.replace(/[\^~>=<]/g, '').split(' ')[0];
+  const url = `${NPM_REGISTRY}/${encodeURIComponent(packageName)}/${cleanVersion}`;
+  
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, { timeout: 8000 });
+      
+      if (!res.ok) {
+        // If version fetch fails, check if the package itself exists
+        const fallbackRes = await fetch(`${NPM_REGISTRY}/${encodeURIComponent(packageName)}/latest`, { timeout: 8000 });
+        
+        if (fallbackRes.status === 404) {
+          return null; // The package definitively does not exist
+        }
+        
+        if (res.status === 429 || fallbackRes.status === 429) {
+          // Rate limited, wait and retry
+          if (attempt < retries) {
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+            continue;
+          }
+        }
+        
+        return {}; // HTTP error other than 404, or out of retries
+      }
+      return await res.json();
+    } catch (err) {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      console.warn(`Failed to fetch info for ${packageName}@${version}: ${err.message}`);
+      return {};
     }
-    return await res.json();
-  } catch (err) {
-    console.warn(`Failed to fetch info for ${packageName}@${version}: ${err.message}`);
-    return null;
   }
+  return {};
 }
 
 async function generateSBOM(dependencies, devDependencies = {}, maxDepth = 2) {
@@ -55,11 +76,15 @@ async function generateSBOM(dependencies, devDependencies = {}, maxDepth = 2) {
       scope: isDev ? 'devDependency' : 'dependency',
       depth,
       transitiveDependencies: [],
+      isFake: false,
     };
 
-    if (depth < maxDepth) {
+    if (depth <= maxDepth) { // Include checking root dependencies
       const pkgInfo = await fetchPackageInfo(name, version);
-      if (pkgInfo && pkgInfo.dependencies) {
+      if (!pkgInfo) {
+        component.isFake = true;
+      }
+      if (depth < maxDepth && pkgInfo && pkgInfo.dependencies) {
         const transDeps = Object.entries(pkgInfo.dependencies);
         component.transitiveDependencies = transDeps.map(([n, v]) => ({
           name: n,

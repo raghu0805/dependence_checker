@@ -107,9 +107,10 @@ async function performScan(packageJson) {
   console.log(`   Dependencies: ${Object.keys(dependencies).length}`);
   console.log(`   DevDependencies: ${Object.keys(devDependencies).length}`);
 
-  // Step 1: Generate SBOM
-  console.log('📦 Generating SBOM...');
-  const sbom = await generateSBOM(dependencies, devDependencies, 1);
+  // Step 1: Generate SBOM (Full Depth traversal)
+  console.log('📦 Generating SBOM (Full Depth)...');
+  // Passing Infinity allows the SBOM generator to fetch all nested transitives until exhausted
+  const sbom = await generateSBOM(dependencies, devDependencies, Infinity);
   console.log(`   Found ${sbom.totalComponents} total components`);
 
   // Step 2: Scan for vulnerabilities
@@ -121,6 +122,25 @@ async function performScan(packageJson) {
   console.log('🔎 Checking for suspicious packages...');
   const allPackageNames = sbom.components.map((c) => c.name);
   const similarityResults = detectSuspiciousPackages(allPackageNames);
+
+  // Mix in fake packages (Dependency Confusion risk)
+  const fakePackages = sbom.components.filter(c => c.isFake);
+  for (const fakePkg of fakePackages) {
+    if (!similarityResults.suspicious.some(s => s.package === fakePkg.name)) {
+      similarityResults.suspicious.push({
+        package: fakePkg.name,
+        isSuspicious: true,
+        riskLevel: 'HIGH',
+        closestMatch: null,
+        allMatches: [],
+        patterns: [{ type: 'unregistered', detail: `Package missing from npm registry` }],
+        reason: `Package "${fakePkg.name}" does NOT exist on the npm registry! This is a severe Dependency Confusion / malicious placeholder risk.`
+      });
+      similarityResults.suspiciousCount++;
+      similarityResults.highRisk++;
+    }
+  }
+
   console.log(`   Found ${similarityResults.suspiciousCount} suspicious packages`);
 
   // Step 4: Calculate trust score

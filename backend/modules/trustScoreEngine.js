@@ -89,15 +89,20 @@ function calculateTrustScore(vulnerabilityResults, similarityResults, sbom) {
   deductions += suspDeduction;
 
   // --- Calculate final score ---
-  const rawScore = Math.max(0, 100 - deductions);
-  const score = Math.round(rawScore);
+  const trustScoreRaw = Math.max(0, 100 - suspDeduction);
+  const trustScore = Math.round(trustScoreRaw);
 
-  // Determine risk level
+  const vulnScoreRaw = Math.max(0, 100 - vulnDeduction);
+  const vulnerabilityScore = Math.round(vulnScoreRaw);
+
+  // Determine OVERALL risk level based on the worst of the two scores
+  const overallScore = Math.min(trustScore, vulnerabilityScore);
   let riskLevel, color;
-  if (score >= 80) {
+  
+  if (overallScore >= 80) {
     riskLevel = 'SAFE';
     color = 'green';
-  } else if (score >= 50) {
+  } else if (overallScore >= 50) {
     riskLevel = 'MODERATE';
     color = 'yellow';
   } else {
@@ -106,7 +111,9 @@ function calculateTrustScore(vulnerabilityResults, similarityResults, sbom) {
   }
 
   return {
-    score,
+    score: trustScore, // Now ONLY reflects authenticity/typosquatting
+    vulnerabilityScore, // NEW: Only reflects CVE severities
+    overallScore, // For backward compatibility coloring
     maxScore: 100,
     riskLevel,
     color,
@@ -122,7 +129,7 @@ function calculateTrustScore(vulnerabilityResults, similarityResults, sbom) {
       lowVulnerabilities: summary.low,
       suspiciousPackages: similarityResults.suspiciousCount,
     },
-    recommendation: getRecommendation(score, summary, similarityResults),
+    recommendation: getRecommendation(overallScore, summary, similarityResults),
   };
 }
 
