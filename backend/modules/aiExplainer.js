@@ -2,78 +2,71 @@ const fetch = require('node-fetch');
 
 /**
  * AI Explainer Module
- * Uses local Ollama instance (default model: llama2 or mistral) to generate AI explanations 
+ * Uses a remote Hugging Face Space running Ollama to generate AI explanations 
  * about why a package is risky and suggests safer alternatives.
  */
 
-// Configure this to point to your local or remote Ollama URL
-const OLLAMA_URL = 'http://127.0.0.1:11434';
-const DEFAULT_MODEL = 'mistral'; // Assuming Mistral or Llama3 might be used locally
-
-async function checkOllamaAvailability() {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { timeout: 3000 });
-    return res.ok;
-  } catch (err) {
-    return false;
-  }
-}
+// Configure this to point to the remote Hub/Space
+const HUGGINGFACE_SPACE_URL = 'https://raghu0934-qwen2-5-1-5b-model.hf.space';
+const OLLAMA_MODEL = 'qwen2.5:1.5b';
 
 async function getExplanation(packageName, vulnerabilities, similarityInfo) {
-  const isAvailable = await checkOllamaAvailability();
-  
-  if (!isAvailable) {
-    return {
-      success: false,
-      message: "OLLAMA_UNAVAILABLE",
-      explanation: "We couldn't reach the local AI engine (Ollama) to generate an explanation. Please ensure Ollama is installed and running at http://127.0.0.1:11434."
-    };
-  }
-
   // Constructing a smart prompt based on what was found
-  let prompt = `You are a cybersecurity expert analyzing npm dependencies.\n\n`;
-  prompt += `Analyze the risk associated with the package: "${packageName}".\n`;
+  let systemPrompt = `You are a cybersecurity expert analyzing npm dependencies.`;
+  
+  let userPrompt = `Analyze the risk associated with the package: "${packageName}".\n`;
 
   if (vulnerabilities && vulnerabilities.length > 0) {
-    prompt += `This package has the following known vulnerabilities (${vulnerabilities.length} total):\n`;
+    userPrompt += `This package has the following known vulnerabilities (${vulnerabilities.length} total):\n`;
     vulnerabilities.slice(0, 3).forEach((v, index) => {
-      prompt += `${index + 1}. Severity: ${v.severity}, Summary: ${v.summary}\n`;
+      userPrompt += `${index + 1}. Severity: ${v.severity}, Summary: ${v.summary}\n`;
     });
   }
 
   if (similarityInfo && similarityInfo.isSuspicious) {
-    prompt += `\nWARNING: This package was flagged as a potential typosquatting attack!\n`;
-    prompt += `It is very similar to the popular package "${similarityInfo.closestMatch?.similarTo}". Distance: ${similarityInfo.closestMatch?.distance}.\n`;
-    prompt += `Reason: ${similarityInfo.reason}\n`;
+    userPrompt += `\nWARNING: This package was flagged as a potential typosquatting attack!\n`;
+    userPrompt += `It is very similar to the popular package "${similarityInfo.closestMatch?.similarTo}". Distance: ${similarityInfo.closestMatch?.distance}.\n`;
+    userPrompt += `Reason: ${similarityInfo.reason}\n`;
   }
 
-  prompt += `\nPlease provide a short, concise, and professional explanation (in plain text or simple markdown) covering:
+  userPrompt += `\nPlease provide a short, concise, and professional explanation (in plain text or simple markdown) covering:
 1. Why this package is risky in its current state.
 2. The potential impact on an application using it.
 3. Suggested actionable advice or safer alternatives for the developer.
 Answer in NO MORE than 150 words.`;
 
   try {
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+    const response = await fetch(`${HUGGINGFACE_SPACE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: DEFAULT_MODEL, 
-        prompt: prompt,
+        model: OLLAMA_MODEL, 
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
         stream: false
       }),
-      timeout: 30000 // ML models can take a bit to respond
+      timeout: 60000 // Extended timeout since HF Spaces can take a moment to wake up
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama responded with status: ${response.status}`);
+      throw new Error(`AI Model Endpoint responded with status: ${response.status}`);
     }
 
     const data = await response.json();
     
+    // In chat API, Ollama responds with { message: { content: "..." } }
+    let explanationText = "Unable to parse AI response";
+    if (data && data.message && data.message.content) {
+      explanationText = data.message.content;
+    } else if (data && data.response) { // Fallback just in case it behaves like /generate
+      explanationText = data.response;
+    }
+
     return {
       success: true,
-      explanation: data.response
+      explanation: explanationText
     };
 
   } catch (error) {
