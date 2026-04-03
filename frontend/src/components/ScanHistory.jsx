@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { HiClock, HiShieldCheck, HiShieldExclamation } from 'react-icons/hi2';
+import API_BASE_URL from '../apiConfig';
 
 export default function ScanHistory() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/history')
+    fetch(`${API_BASE_URL}/api/history`)
       .then((res) => res.json())
       .then((data) => {
         setHistory(data);

@@ -6,7 +6,9 @@ import ScanProgress from './components/ScanProgress';
 import Dashboard from './components/Dashboard';
 import ScanHistory from './components/ScanHistory';
 
-const API_BASE = '/api';
+import API_BASE_URL from './apiConfig';
+
+const API_BASE = API_BASE_URL + '/api';
 
 function App() {
   const [scanResults, setScanResults] = useState(null);

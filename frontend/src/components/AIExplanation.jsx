@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { HiSparkles, HiCpuChip } from 'react-icons/hi2';
+import API_BASE_URL from '../apiConfig';
 
 export default function AIExplanation({ packageName, vulnerabilities, similarityInfo }) {
   const [explanation, setExplanation] = useState(null);
@@ -10,7 +11,7 @@ export default function AIExplanation({ packageName, vulnerabilities, similarity
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/explain', {
+      const response = await fetch(`${API_BASE_URL}/api/explain`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
